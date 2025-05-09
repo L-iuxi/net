@@ -9,9 +9,9 @@
 
 #define NAMESIZE  11
 #define IPSTRLEN  40
-#define RCVPORT   12345 
+#define RCVPORT   12456
 struct msg_st{
-    uint8_t name[NAMESIZE];
+    char name[NAMESIZE];
     int math;
     int chinese;
 }__attribute__((packed));
@@ -36,8 +36,10 @@ int main(int argc,char *argv[])
     }
     
     strcpy(sendbuf.name,"liux");
+    sendbuf.math = 100;
+    sendbuf.chinese = 100;
 
-    sendbuf.math = htonl(rand()%100);
+   // sendbuf.math = htonl(rand()%100);
 
     remoteadd.sin_family = AF_INET;
     //remoteadd.sin_port = htons(atoi(RCVPORT));
