@@ -50,8 +50,8 @@ int main()
     printf("Server is listening on port %d...\n",RCVPORT);
 
     remoteadd_len = sizeof(remoteadd);
-    // while(1)
-    // {
+    while(1)
+     {
     if(recvfrom(n, &rbuf, sizeof(rbuf), 0, (struct sockaddr*)&remoteadd, &remoteadd_len) < 0)
 
     {
@@ -65,7 +65,7 @@ int main()
     printf("Name:%s\n",rbuf.name);
     printf("math:%d\n",ntohl(rbuf.math));
     printf("chinese:%d\n",ntohl(rbuf.chinese));
-    // }
+     }
     close(n);
 
 
