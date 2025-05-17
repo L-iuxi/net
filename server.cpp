@@ -8,10 +8,21 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <cstring>
+#include <algorithm>
+
 
 //#define PORT 8080
 #define CONTROL_PORT 21
 #define BUF_SIZE 1024
+
+std::string trim(const std::string &str)
+{
+    size_t first = str.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return ""; // no content
+    size_t last = str.find_last_not_of(" \t\r\n");
+    return str.substr(first, (last - first + 1));
+}
+
 
 void send_response(int client_socket,const std::string &response)
 {
@@ -32,9 +43,12 @@ void handle_client(int client_socket)
         }
 
         std::string command(buffer);
+
+          command = trim(command);
+          
         std::stringstream response;
 
-        if(command == "list")
+        if(command == " LIST")
         {
 
             DIR *dir = opendir(".");

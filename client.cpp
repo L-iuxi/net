@@ -28,7 +28,7 @@ std::string rec_response(int sock)
 
 void list_files(int sock)
 {
-    send_command(sock,"list");
+    send_command(sock," LIST");
     std::string response = rec_response(sock);
    std::cout << "Server response: " << response << std::endl;
 }
@@ -105,8 +105,8 @@ int main() {
     std::cout << "Server response: " << response << std::endl;
 
     list_files(sockfd);
-    download_file(sockfd,"name");
-    upload_file(sockfd,"name");
+    download_file(sockfd,"1.c");
+    upload_file(sockfd,"1.c");
 
     // // 发送数据
     // if (send(sockfd, message, strlen(message), 0) == -1) {
