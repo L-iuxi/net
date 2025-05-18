@@ -9,24 +9,29 @@
 #include <dirent.h>
 #include <cstring>
 #include <algorithm>
-
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 //#define PORT 8080
 #define CONTROL_PORT 21
 #define BUF_SIZE 1024
+#define THREAD_POOL_SIZE 4 
 
-std::string trim(const std::string &str)
-{
-    size_t first = str.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return ""; // no content
-    size_t last = str.find_last_not_of(" \t\r\n");
-    return str.substr(first, (last - first + 1));
-}
 
+
+std::mutex mtx;  // 保护线程池中的任务队列
+std::condition_variable cv;  // 线程池中的任务队列条件变量
+std::vector<std::thread> thread_pool;  
+
+
+std::vector<int> task_queue;
 
 void send_response(int client_socket,const std::string &response)
 {
     send(client_socket,response.c_str(),response.length(),0);
+    
 }
 
 void handle_client(int client_socket)
@@ -44,11 +49,9 @@ void handle_client(int client_socket)
 
         std::string command(buffer);
 
-          command = trim(command);
-          
         std::stringstream response;
 
-        if(command == " LIST")
+        if(command == "LIST\r\n")
         {
 
             DIR *dir = opendir(".");
@@ -106,13 +109,38 @@ void handle_client(int client_socket)
     }
 }
 
+
+void thread_function()
+{
+    while (true)
+    {
+        int client_socket;
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+
+           
+            cv.wait(lock, [] { return !task_queue.empty(); });
+
+           
+            client_socket = task_queue.back();
+            task_queue.pop_back();
+        }
+
+        
+        std::cout << "Thread " << std::this_thread::get_id() << " handling client..." << std::endl;
+        send_response(client_socket, "220 Welcome to the FTP server\r\n");
+        handle_client(client_socket);
+        close(client_socket);
+        std::cout << "Thread " << std::this_thread::get_id() << " finished handling client." << std::endl;
+    }
+}
 int main() {
     int server_fd, client_fd;
     struct sockaddr_in server_addr, client_addr;
      socklen_t client_len = sizeof(client_addr);
     //char buffer[BUF_SIZE];
 
-    // 创建 TCP 套接字
+   
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("Socket creation failed");
         return 1;
@@ -121,16 +149,16 @@ int main() {
     // 配置服务器地址
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;  // 监听所有网络接口
-    server_addr.sin_port =    server_addr.sin_port = htons(CONTROL_PORT);       // 设置端口号
+    server_addr.sin_port =    server_addr.sin_port = htons(CONTROL_PORT);       
 
-    // 绑定套接字到指定的端口和 IP 地址
+
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
         perror("Binding failed");
         close(server_fd);
         return 1;
     }
 
-    // 开始监听客户端连接
+   
     if (listen(server_fd, 3) == -1) {
         perror("Listen failed");
         close(server_fd);
@@ -138,46 +166,54 @@ int main() {
     }
    std::cout << "FTP Server listening on port " << CONTROL_PORT << "..." << std::endl;
 
-   while(1)
-   {
-    int client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-    if(client_socket < 0)
+   
+   for (int i = 0; i < THREAD_POOL_SIZE; ++i)
     {
-        std::cerr << "Failed to accept client connection." << std::endl;
-            continue;
+        thread_pool.emplace_back(thread_function);
     }
 
-     std::cout << "Client connected." << std::endl;
-     send_response(client_socket,"220 Welcome to the FTP server\r\n");
-     handle_client(client_socket);
-     close(client_socket);
-       std::cout << "Client disconnected." << std::endl;
 
-   }
-    // 接受客户端连接
-    // if ((client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len)) == -1) {
-    //     perror("Accept failed");
-    //     close(server_fd);
-    //     exit(EXIT_FAILURE);
-    // }
+    while (true)
+    {
+        int client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+        if (client_socket < 0)
+        {
+            std::cerr << "Failed to accept client connection." << std::endl;
+            continue;
+        }
 
-    // printf("Client connected\n");
+        std::cout << "Client connected." << std::endl;
 
-    // // 读取客户端发送的数据
-    // int bytes_received = recv(client_fd, buffer, BUF_SIZE, 0);
-    // if (bytes_received == -1) {
-    //     perror("Recv failed");
-    //     close(client_fd);
-    //     close(server_fd);
-    //     exit(EXIT_FAILURE);
-    // }
-    
-    // buffer[bytes_received] = '\0';  // 添加字符串结束符
-    // printf("Received from client: %s\n", buffer);
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            task_queue.push_back(client_socket);
+        }
 
-    // // 关闭连接
-    // close(client_fd);
+        
+        cv.notify_one();
+    }
+
     close(server_fd);
 
     return 0;
+//    while(1)
+//    {
+//     int client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+//     if(client_socket < 0)
+//     {
+//         std::cerr << "Failed to accept client connection." << std::endl;
+//             continue;
+//     }
+
+//      std::cout << "Client connected." << std::endl;
+//      send_response(client_socket,"220 Welcome to the FTP server\r\n");
+//      handle_client(client_socket);
+//      close(client_socket);
+//        std::cout << "Client disconnected." << std::endl;
+
+//    }
+  
+//     close(server_fd);
+
+//     return 0;
 }
