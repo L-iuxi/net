@@ -73,14 +73,30 @@ void handle_client(int client_socket)
             std::ifstream file(filename,std::ios::binary);
             if(file.is_open())
             {
+
+                 send_response(client_socket, "150 OK");
                 while(!file.eof())
                 {
                     file.read(buffer,sizeof(buffer));
-                    send(client_socket,buffer,file.gcount(),0);
+                      size_t bytes_read = file.gcount();
+                    //send(client_socket,buffer,file.gcount(),0);
+                     if (bytes_read > 0)
+            {
+                // 发送读取的文件内容到客户端
+                ssize_t bytes_sent = send(client_socket, buffer, bytes_read, 0);
+                
+                if (bytes_sent < 0) {
+                    // 发送失败，返回错误
+                    send_response(client_socket, "550 Error: Transfer failed");
+                    file.close();
+                    return;
                 }
-                file.close();
+            }
+                }
+                 send_response(client_socket, "226 Transfer complete");
+                    file.close();  
             }else{
-                send_response(client_socket,"ERROR2");
+                send_response(client_socket, "550 File not found");
             }
         }else if(command.rfind("STOR ", 0) == 0)
         {
