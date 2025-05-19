@@ -34,92 +34,139 @@ void send_response(int client_socket,const std::string &response)
     
 }
 
-void handle_client(int client_socket)
-{
-    char buffer[BUF_SIZE];
-    while(1)
-    {
-        memset(buffer,0,sizeof(buffer));
-        int bytes = recv(client_socket,buffer,sizeof(buffer),0);
+std::string get_ip_and_port(int client_socket) {
+    struct sockaddr_in sa;
+    socklen_t len = sizeof(sa);
+    if (getsockname(client_socket, (struct sockaddr *)&sa, &len) == -1) {
+        std::cerr << "Error getting socket information." << std::endl;
+        return "";
+    }
 
-        if(bytes <= 0 )
-        {
+    // Extract IP and port
+    uint32_t ip = ntohl(sa.sin_addr.s_addr);
+    uint16_t port = ntohs(sa.sin_port);
+
+    // PASV mode requires the port to be represented as two numbers
+    uint8_t p1 = (port >> 8) & 0xFF;
+    uint8_t p2 = port & 0xFF;
+
+    std::stringstream ip_and_port;
+    ip_and_port << ((ip >> 24) & 0xFF) << ","
+                << ((ip >> 16) & 0xFF) << ","
+                << ((ip >> 8) & 0xFF) << ","
+                << (ip & 0xFF) << ","
+                << (int)p1 << ","
+                << (int)p2;
+
+    return ip_and_port.str();
+}
+
+void handle_client(int client_socket) {
+    char buffer[BUF_SIZE];
+    bool pasv = false;
+    int pasv_socket = -1;
+
+    
+    pasv = true; 
+    std::string ip_and_port = get_ip_and_port(client_socket);
+    if (ip_and_port.empty()) {
+        send_response(client_socket, "425 Unable to enter passive mode.\r\n");
+        return;
+    }
+    send_response(client_socket, "227 Entering Passive Mode (" + ip_and_port + ")\r\n");
+
+    while(1) {
+        memset(buffer, 0, sizeof(buffer));
+        int bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+
+        if (bytes <= 0) {
             break;
         }
 
         std::string command(buffer);
-
         std::stringstream response;
 
-        if(command == "LIST\r\n")
-        {
-
-            DIR *dir = opendir(".");
-            if(dir)
-            {
-                struct dirent *entry;
-                while((entry = readdir(dir))!=nullptr)
-                {
-                    response << entry->d_name <<"\r\n";
-                }
-                closedir(dir);
-                send_response(client_socket,response.str());
-            }else{
-                send_response(client_socket,"ERROR1");
-            }
-        }else if(command.rfind("RETR ", 0) == 0)
-        {
-            std::string filename = command.substr(5);
-            std::ifstream file(filename,std::ios::binary);
-            if(file.is_open())
-            {
-
-                 send_response(client_socket, "150 OK");
-                while(!file.eof())
-                {
-                    file.read(buffer,sizeof(buffer));
-                      size_t bytes_read = file.gcount();
-                    //send(client_socket,buffer,file.gcount(),0);
-                     if (bytes_read > 0)
-            {
-                // 发送读取的文件内容到客户端
-                ssize_t bytes_sent = send(client_socket, buffer, bytes_read, 0);
-                
-                if (bytes_sent < 0) {
-                    // 发送失败，返回错误
-                    send_response(client_socket, "550 Error: Transfer failed");
-                    file.close();
+        if (command == "LIST\r\n") {
+            if (pasv) {
+                send_response(client_socket, "150 OK, starting data transfer.\r\n");
+                pasv_socket = accept(client_socket, NULL, NULL);
+                if (pasv_socket < 0) {
+                    send_response(client_socket, "425 Failed to establish data connection.\r\n");
                     return;
                 }
             }
+            DIR *dir = opendir(".");
+            if (dir) {
+                struct dirent *entry;
+                while ((entry = readdir(dir)) != nullptr) {
+                    response << entry->d_name << "\r\n";
+                    if (pasv) {
+                        send(pasv_socket, response.str().c_str(), response.str().length(), 0);
+                    }
+                    response.str("");
                 }
-                 send_response(client_socket, "226 Transfer complete");
-                    file.close();  
-            }else{
-                send_response(client_socket, "550 File not found");
-            }
-        }else if(command.rfind("STOR ", 0) == 0)
-        {
-            std::string filename = command.substr(5);
-            std::ofstream file(filename,std::ios::binary);
-            if(file.is_open())
-            {
-                while(true)
-                {
-                    int bytes = recv(client_socket,buffer,sizeof(buffer),0);
+                closedir(dir);
 
-                    if(bytes <= 0)
-                    {
+                if (!pasv) {
+                    send_response(client_socket, response.str());
+                }
+            } else {
+                send_response(client_socket, "ERROR1");
+            }
+
+            if (pasv) {
+                close(pasv_socket);
+            }
+        }
+
+        else if (command.rfind("RETR ", 0) == 0) {
+            std::string filename = command.substr(5);
+            if (pasv) {
+                send_response(client_socket, "150 Opening data connection.\r\n");
+
+                // Accept the data connection for PASV mode
+                pasv_socket = accept(client_socket, NULL, NULL);
+                if (pasv_socket < 0) {
+                    send_response(client_socket, "425 Failed to establish data connection.\r\n");
+                    return;
+                }
+
+                std::ifstream file(filename, std::ios::binary);
+                if (file.is_open()) {
+                    char file_buffer[BUF_SIZE];
+                    while (!file.eof()) {
+                        file.read(file_buffer, sizeof(file_buffer));
+                        ssize_t bytes_read = file.gcount();
+                        send(pasv_socket, file_buffer, bytes_read, 0);
+                    }
+                    file.close();
+                    send_response(client_socket, "226 Transfer complete.\r\n");
+                } else {
+                    send_response(client_socket, "550 File not found.\r\n");
+                }
+                close(pasv_socket);
+            } else {
+                send_response(client_socket, "425 No passive connection established.\r\n");
+            }
+        }
+        else if (command.rfind("STOR ", 0) == 0) {
+            std::string filename = command.substr(5);
+            std::ofstream file(filename, std::ios::binary);
+            if (file.is_open()) {
+                while (true) {
+                    int bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+
+                    if (bytes <= 0) {
                         break;
                     }
-                    file.write(buffer,bytes);
+                    file.write(buffer, bytes);
                 }
                 file.close();
                 send_response(client_socket, "200 OK\r\n");
-            }else {
+            } else {
                 send_response(client_socket, "ERROR3: Unable to open file.\r\n");
             }
-        }else {
+        } else {
             send_response(client_socket, "ERROR: Unknown command.\r\n");
         }
     }
