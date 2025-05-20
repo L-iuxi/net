@@ -13,6 +13,10 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <sys/stat.h>
+#include <pwd.h>
+#include <grp.h>
+
 
 //#define PORT 8080
 #define CONTROL_PORT 21
@@ -27,146 +31,155 @@ std::vector<std::thread> thread_pool;
 
 
 std::vector<int> task_queue;
+void printf_long(const char *file_name, const struct stat *file_stat, std::stringstream &response)  {
+    
+char arr[10];
+    arr[0] = S_ISDIR(file_stat->st_mode) ? 'd' : '-';
+    if(arr[0] == '-')
+    {
+        arr[0] = S_ISREG(file_stat->st_mode) ? '-' : 'l';
+    } 
+    arr[1] = S_IRUSR & file_stat->st_mode ? 'r' : '-';
+    arr[2] = S_IWUSR & file_stat->st_mode ? 'w' : '-';
+    arr[3] = S_IXUSR & file_stat->st_mode ? 'x' : '-';
+    arr[4] = S_IRGRP & file_stat->st_mode ? 'r' : '-';
+    arr[5] = S_IWGRP & file_stat->st_mode ? 'w' : '-';
+    arr[6] = S_IXGRP & file_stat->st_mode ? 'x' : '-';
+    arr[7] = S_IROTH & file_stat->st_mode ? 'r' : '-';
+    arr[8] = S_IWOTH & file_stat->st_mode ? 'w' : '-';
+    arr[9] = S_IXOTH & file_stat->st_mode ? 'x' : '-';
+    // printf("%s",arr);
+    // printf(" %lu ", file_stat->st_nlink);
+    response << arr << " " << file_stat->st_nlink << " ";
 
+   
+    // printf("%d ", file_stat->st_uid);
+    // printf("%d ",file_stat->st_gid);
+    uid_t uid = getuid();
+    gid_t gid = getgid(); 
+    // printfid(uid,gid);
+    struct passwd *useid = getpwuid(uid);
+     response << useid->pw_name << " ";
+    //printf("%s ",useid->pw_name);
+    struct group *groupid = getgrgid(gid);
+     response << groupid->gr_name << " ";
+    //printf("%s ",groupid->gr_name);
+
+
+   
+    char time_str[20];
+    strftime(time_str, sizeof(time_str), "%m月 %d %H:%M", localtime(&(file_stat->st_atime)));
+    // printf("%s ", time_str);
+
+    
+    // printf("%s\n", file_name);
+     response << time_str << " ";
+
+    response << file_name << "\r\n";
+
+}
+//-l结束
 void send_response(int client_socket,const std::string &response)
 {
     send(client_socket,response.c_str(),response.length(),0);
-    
+
 }
 
-std::string get_ip_and_port(int client_socket) {
-    struct sockaddr_in sa;
-    socklen_t len = sizeof(sa);
-    if (getsockname(client_socket, (struct sockaddr *)&sa, &len) == -1) {
-        std::cerr << "Error getting socket information." << std::endl;
-        return "";
-    }
-
-    // Extract IP and port
-    uint32_t ip = ntohl(sa.sin_addr.s_addr);
-    uint16_t port = ntohs(sa.sin_port);
-
-    // PASV mode requires the port to be represented as two numbers
-    uint8_t p1 = (port >> 8) & 0xFF;
-    uint8_t p2 = port & 0xFF;
-
-    std::stringstream ip_and_port;
-    ip_and_port << ((ip >> 24) & 0xFF) << ","
-                << ((ip >> 16) & 0xFF) << ","
-                << ((ip >> 8) & 0xFF) << ","
-                << (ip & 0xFF) << ","
-                << (int)p1 << ","
-                << (int)p2;
-
-    return ip_and_port.str();
-}
-
-void handle_client(int client_socket) {
+void handle_client(int client_socket)
+{
     char buffer[BUF_SIZE];
-    bool pasv = false;
-    int pasv_socket = -1;
+    while(1)
+    {
+        memset(buffer,0,sizeof(buffer));
+        int bytes = recv(client_socket,buffer,sizeof(buffer),0);
 
-    
-    pasv = true; 
-    std::string ip_and_port = get_ip_and_port(client_socket);
-    if (ip_and_port.empty()) {
-        send_response(client_socket, "425 Unable to enter passive mode.\r\n");
-        return;
-    }
-    send_response(client_socket, "227 Entering Passive Mode (" + ip_and_port + ")\r\n");
-
-    while(1) {
-        memset(buffer, 0, sizeof(buffer));
-        int bytes = recv(client_socket, buffer, sizeof(buffer), 0);
-
-        if (bytes <= 0) {
+        if(bytes <= 0 )
+        {
             break;
         }
 
         std::string command(buffer);
+
         std::stringstream response;
 
-        if (command == "LIST\r\n") {
-            if (pasv) {
-                send_response(client_socket, "150 OK, starting data transfer.\r\n");
-                pasv_socket = accept(client_socket, NULL, NULL);
-                if (pasv_socket < 0) {
-                    send_response(client_socket, "425 Failed to establish data connection.\r\n");
-                    return;
-                }
-            }
+        if(command == "LIST\r\n")
+        {
+            
             DIR *dir = opendir(".");
-            if (dir) {
+            if(dir)
+            {
                 struct dirent *entry;
-                while ((entry = readdir(dir)) != nullptr) {
-                    response << entry->d_name << "\r\n";
-                    if (pasv) {
-                        send(pasv_socket, response.str().c_str(), response.str().length(), 0);
-                    }
-                    response.str("");
+                struct stat file_stat;
+                while((entry = readdir(dir))!=nullptr)
+                {
+                    if (stat(entry->d_name, &file_stat) == 0) {
+                std::stringstream response;
+                printf_long(entry->d_name, &file_stat, response);
+                send_response(client_socket, response.str());
+            }
+
                 }
                 closedir(dir);
-
-                if (!pasv) {
-                    send_response(client_socket, response.str());
-                }
-            } else {
-                send_response(client_socket, "ERROR1");
+                send_response(client_socket,response.str());
+            }else{
+                send_response(client_socket,"ERROR1");
             }
-
-            if (pasv) {
-                close(pasv_socket);
-            }
-        }
-
-        else if (command.rfind("RETR ", 0) == 0) {
+        }else if(command.rfind("RETR ", 0) == 0)
+        {
             std::string filename = command.substr(5);
-            if (pasv) {
-                send_response(client_socket, "150 Opening data connection.\r\n");
+            std::ifstream file(filename,std::ios::binary);
+            if(file.is_open())
+            {
 
-                // Accept the data connection for PASV mode
-                pasv_socket = accept(client_socket, NULL, NULL);
-                if (pasv_socket < 0) {
-                    send_response(client_socket, "425 Failed to establish data connection.\r\n");
+                 send_response(client_socket, "150 OK");
+                while(!file.eof())
+                {
+                    file.read(buffer,sizeof(buffer));
+                    send(client_socket,buffer,file.gcount(),0);
+                      size_t bytes_read = file.gcount();
+                    //send(client_socket,buffer,file.gcount(),0);
+                     if (bytes_read > 0)
+            {
+                // 发送读取的文件内容到客户端
+                ssize_t bytes_sent = send(client_socket, buffer, bytes_read, 0);
+                
+                if (bytes_sent < 0) {
+                    // 发送失败，返回错误
+                    send_response(client_socket, "550 Error: Transfer failed");
+                    file.close();
                     return;
                 }
-
-                std::ifstream file(filename, std::ios::binary);
-                if (file.is_open()) {
-                    char file_buffer[BUF_SIZE];
-                    while (!file.eof()) {
-                        file.read(file_buffer, sizeof(file_buffer));
-                        ssize_t bytes_read = file.gcount();
-                        send(pasv_socket, file_buffer, bytes_read, 0);
-                    }
-                    file.close();
-                    send_response(client_socket, "226 Transfer complete.\r\n");
-                } else {
-                    send_response(client_socket, "550 File not found.\r\n");
-                }
-                close(pasv_socket);
-            } else {
-                send_response(client_socket, "425 No passive connection established.\r\n");
+                file.close();
             }
-        }
-        else if (command.rfind("STOR ", 0) == 0) {
+                }
+                 send_response(client_socket, "226 Transfer complete");
+                    file.close();  
+            }else{
+                send_response(client_socket,"ERROR2");
+                send_response(client_socket, "550 File not found");
+            }
+        }else if(command.rfind("STOR ", 0) == 0)
+        {
             std::string filename = command.substr(5);
-            std::ofstream file(filename, std::ios::binary);
-            if (file.is_open()) {
-                while (true) {
-                    int bytes = recv(client_socket, buffer, sizeof(buffer), 0);
+            std::ofstream file(filename,std::ios::binary);
+            if(file.is_open())
+            {
+                while(true)
+                {
+                    int bytes = recv(client_socket,buffer,sizeof(buffer),0);
 
-                    if (bytes <= 0) {
+                    if(bytes <= 0)
+                    {
                         break;
                     }
-                    file.write(buffer, bytes);
+                    file.write(buffer,bytes);
                 }
                 file.close();
                 send_response(client_socket, "200 OK\r\n");
-            } else {
+            }else {
                 send_response(client_socket, "ERROR3: Unable to open file.\r\n");
             }
-        } else {
+        }else {
             send_response(client_socket, "ERROR: Unknown command.\r\n");
         }
     }
@@ -181,15 +194,15 @@ void thread_function()
         {
             std::unique_lock<std::mutex> lock(mtx);
 
-           
+
             cv.wait(lock, [] { return !task_queue.empty(); });
 
-           
+
             client_socket = task_queue.back();
             task_queue.pop_back();
         }
 
-        
+
         std::cout << "Thread " << std::this_thread::get_id() << " handling client..." << std::endl;
         send_response(client_socket, "220 Welcome to the FTP server\r\n");
         handle_client(client_socket);
@@ -203,7 +216,7 @@ int main() {
      socklen_t client_len = sizeof(client_addr);
     //char buffer[BUF_SIZE];
 
-   
+
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("Socket creation failed");
         return 1;
@@ -221,7 +234,7 @@ int main() {
         return 1;
     }
 
-   
+
     if (listen(server_fd, 3) == -1) {
         perror("Listen failed");
         close(server_fd);
@@ -229,7 +242,7 @@ int main() {
     }
    std::cout << "FTP Server listening on port " << CONTROL_PORT << "..." << std::endl;
 
-   
+
    for (int i = 0; i < THREAD_POOL_SIZE; ++i)
     {
         thread_pool.emplace_back(thread_function);
@@ -252,7 +265,7 @@ int main() {
             task_queue.push_back(client_socket);
         }
 
-        
+
         cv.notify_one();
     }
 
@@ -275,7 +288,7 @@ int main() {
 //        std::cout << "Client disconnected." << std::endl;
 
 //    }
-  
+
 //     close(server_fd);
 
 //     return 0;
