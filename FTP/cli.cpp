@@ -67,6 +67,8 @@ std::string receive_data(int sockfd) {
         buffer[bytes_received] = '\0';
         return std::string(buffer);
     }
+ 
+
     return "";
 }
 
@@ -127,18 +129,25 @@ void run_client(const char* server_ip) {
 
      std ::string cmd;
      std::cout << "Please enter command2: ";
-        std::getline(std::cin, cmd);
+    std::getline(std::cin, cmd);
     command_part(cmd,control_sock);
 
 
-
+    std::string file_list = receive_data(data_sock);
+    if (!file_list.empty()) {
+        std::cout << "Received file list: " << file_list << std::endl;
+        std::cout << "目录内容:\n" << file_list;
+    } else {
+        std::cerr << "Failed to receive file list." << std::endl;
+    }
    
-     send_data(data_sock, "1234567\r\n");
+ 
+    // send_data(data_sock, "1234567\r\n");
 
     // 接收服务器的响应，确认发送成功
-    response = receive_data(data_sock);
+    //response = receive_data(data_sock);
     std::cout << "Server response to data transfer: " << response << std::endl;
-     std::cout << response << std::endl;
+     //std::cout << response << std::endl;
     // 关闭连接
     close(data_sock);
     close(control_sock);

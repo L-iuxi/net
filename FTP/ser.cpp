@@ -99,20 +99,41 @@ void handle_list(int data_sock,const std::string &dir_name)
 {
     DIR *dir;
     struct dirent *entry;
-    if(opendir(dir_name.c_str()) != NULL)
+    std::cout << "r1" << std::endl;
+    dir = opendir(dir_name.c_str());
+    entry = readdir(dir);
+    std::cout << "r2" << std::endl;
+    
+    if(dir != NULL)
     {
+         std::cout << "right dir" << std::endl;
          std::string file_list;
-        while ((entry = readdir(dir)) != NULL) {
+        while (entry != NULL) {
+            std::cout << "1" << std::endl;
             file_list += entry->d_name;
             file_list += "\r\n";
+            entry = readdir(dir);
         }
+        std::cout << "file_list is" <<file_list<< std::endl;
         closedir(dir);
-           int data_conn = accept(data_sock, nullptr, nullptr);
+        std::cout << "right dir" << std::endl;
+        
+        struct sockaddr_in data_conn_addr;
+        socklen_t data_conn_len = sizeof(data_conn_addr);
+       // int data_client_sock = accept(data_sock, (struct sockaddr*)&data_client_addr, &data_client_len);
+
+        int data_conn = accept(data_sock, (struct sockaddr*)&data_conn_addr, &data_conn_len);
+        std::cout << "3" << std::endl;
         if (data_conn != -1) {
-            send_data(data_conn, file_list);
+            std::cout << "right data_conn" << std::endl;
+            send_data(data_sock, file_list);
             std::cout << "Sent file list to client." << std::endl;
             close(data_conn);
+        }else{
+            std::cout << "wrong data_conn" << std::endl;
         }
+    }else{
+        std::cout << "wrong dir" << std::endl;
     }
     
 }
@@ -139,27 +160,31 @@ void handle_client(int client_sock) {
         socklen_t data_client_len = sizeof(data_client_addr);
         int data_client_sock = accept(data_sock, (struct sockaddr*)&data_client_addr, &data_client_len);
       
-        receive_data(data_sock);
+         receive_data(data_sock);
+        // close(data_client_sock);
+        // close(data_sock);
+        
+        std::string command = receive_data(client_sock);
+        //std::cout << "收到命令: " << command << std::endl;
+       
+       
+        if (strncmp(command.c_str(), "LIST", 4) == 0) {
+         std::cout << "LIST command received" << std::endl;
+
+       
+        std::string dir_name = command.substr(5);
+        dir_name = dir_name.substr(0, dir_name.find("\r\n")); // 去除末尾的\r\n
+        std::cout << "目录: " << dir_name << std::endl;
+
+        handle_list(data_sock, dir_name); // 处理目录列表
+        //close(data_sock);
+        }
         close(data_client_sock);
         close(data_sock);
-    }
-    else if(strncmp(buffer, "LIST", 4) == 0)
-    {
-        int data_sock = socket(AF_INET, SOCK_STREAM, 0);
-        handle_pasv(client_sock,data_sock);
-        std::string command = receive_data(client_sock);
-        std::cout << "Received command: " << command << std::endl;
-
         
-        std :: string dir_name = command.substr(5);
-        dir_name = dir_name.substr(0, dir_name.find("\r\n"));
-
-       // handle_pasv(client_sock,data_sock);
-        handle_list(data_sock,dir_name);
-        close(data_sock);
     }
+  
 
-    
     close(client_sock);
 }
 
