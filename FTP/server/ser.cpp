@@ -318,7 +318,7 @@ void handle_client(int client_socket, const string& server_ip) {
                 continue;
             }
             
-            string response = "目录打印完毕\r\n";
+            string response = "150目录打印完毕\r\n";
             send(client_socket, response.c_str(), response.size(), 0);
             
            
@@ -434,13 +434,13 @@ int main() {
     }
     
  
-    char hostname[256];
-    gethostname(hostname, sizeof(hostname));
-    struct hostent* host = gethostbyname(hostname);
-    string server_ip = inet_ntoa(*(struct in_addr*)host->h_addr_list[0]);
+    // char hostname[256];
+    // gethostname(hostname, sizeof(hostname));
+    // struct hostent* host = gethostbyname(hostname);
+    // string server_ip = inet_ntoa(*(struct in_addr*)host->h_addr_list[0]);
     
-    log_message("FTP Server started on " + server_ip + ":" + to_string(CONTROL_PORT));
-    log_message("Waiting for connections...");
+    // log_message("FTP Server started on " + server_ip + ":" + to_string(CONTROL_PORT));
+    // log_message("Waiting for connections...");
     
     while (server_running) {
         sockaddr_in client_addr{};
@@ -452,9 +452,9 @@ int main() {
             continue;
         }
         
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
-        log_message("New connection from " + string(client_ip));
+        // char client_ip[INET_ADDRSTRLEN];
+        // inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+        // log_message("New connection from " + string(client_ip));
 
         thread client_thread(handle_client, client_socket, server_ip);
         client_thread.detach();
