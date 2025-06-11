@@ -120,15 +120,23 @@ int main(int argc, char* argv[]) {
     string welcome_msg(buffer, bytes_received);
     cout << "Server: " << welcome_msg;
     
+    string response = send_ftp_command(control_socket, "PASV");
+            
+            string data_ip;
+            int data_port;
+            if (!parse_pasv_response(response, data_ip, data_port)) {
+                cerr << "Failed to parse PASV response" << endl;
+             
+            }
   
-    string username, password;
-    cout << "Username: ";
-    getline(cin, username);
-    send_ftp_command(control_socket, "USER " + username);
+    // string username, password;
+    // cout << "Username: ";
+    // getline(cin, username);
+    // send_ftp_command(control_socket, "USER " + username);
     
-    cout << "Password: ";
-    getline(cin, password);
-    send_ftp_command(control_socket, "PASS " + password);
+    // cout << "Password: ";
+    // getline(cin, password);
+    // send_ftp_command(control_socket, "PASS " + password);
     
     // while (true) {
         cout << "ftp> ";
@@ -156,14 +164,14 @@ int main(int argc, char* argv[]) {
             }else{
                  std:: cout << "请在LIST 后输入目录名 eg：/home/liuyuxi" << std:: endl;
             }
-           string response = send_ftp_command(control_socket, "PASV");
+        //    string response = send_ftp_command(control_socket, "PASV");
             
-            string data_ip;
-            int data_port;
-            if (!parse_pasv_response(response, data_ip, data_port)) {
-                cerr << "Failed to parse PASV response" << endl;
+        //     string data_ip;
+        //     int data_port;
+        //     if (!parse_pasv_response(response, data_ip, data_port)) {
+        //         cerr << "Failed to parse PASV response" << endl;
              
-            }
+        //     }
             
            
             int data_socket = establish_data_connection(data_ip, data_port);
@@ -185,6 +193,8 @@ int main(int argc, char* argv[]) {
             if (bytes_received > 0) {
                 cout << "Server: " << string(buffer, bytes_received);
             }
+
+            
         } else if (cmd == "RETR") {
             string filepath = command.substr(cmd.length() + 1);
             
@@ -195,14 +205,14 @@ int main(int argc, char* argv[]) {
         cerr << "输入文件路径 例如/home/liuyuxi/net/FTP/1.txt" << endl;
         //continue;
     }
-            string response = send_ftp_command(control_socket, "PASV");
+            // string response = send_ftp_command(control_socket, "PASV");
             
-            string data_ip;
-            int data_port;
-            if (!parse_pasv_response(response, data_ip, data_port)) {
-                cerr << "Failed to parse PASV response" << endl;
-                //continue;
-            }
+            // string data_ip;
+            // int data_port;
+            // if (!parse_pasv_response(response, data_ip, data_port)) {
+            //     cerr << "Failed to parse PASV response" << endl;
+            //     //continue;
+            // }
         
             int data_socket = establish_data_connection(data_ip, data_port);
             if (data_socket == -1) {
@@ -210,10 +220,10 @@ int main(int argc, char* argv[]) {
             }
             
             response = send_ftp_command(control_socket, "RETR " + filepath);
-            // if (response.substr(0, 3) != "150") {
-            //     close(data_socket);
-            //     //continue;
-            // }
+            if (response.substr(0, 3) != "150") {
+                close(data_socket);
+                //continue;
+            }
             
             ofstream file(filename, ios::binary);
             if (!file) {
