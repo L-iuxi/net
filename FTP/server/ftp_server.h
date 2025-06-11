@@ -18,6 +18,8 @@
 #include <pwd.h>  
 #include <grp.h> 
 #include <netdb.h>   
+#include <sys/epoll.h>
+#include <unistd.h>
 #include "thread.h" 
 
 #define CONTROL_PORT 2100
@@ -32,6 +34,7 @@ class FTP{
     int server_socket;
     int client_socket;
     int pasv_socket;
+    int epoll_fd;
 
     public:
     
@@ -41,6 +44,8 @@ class FTP{
     string handle_pasv(const string& ip, int port);
     FTP(int &server_socket);
     void handle_list(int data_socket, const string& command, const string& arg);
+    void handle_retr(int data_socket, const string& command, const string& arg);
+    void handle_stor(int data_socket, const string& command, const string& arg);
     Threadpool threadpool;
 
 };
